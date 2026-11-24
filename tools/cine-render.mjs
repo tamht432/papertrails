@@ -73,7 +73,7 @@ function requirePuppeteer() {
 let puppeteer = requirePuppeteer();
 if (!puppeteer) {
   console.log('installing puppeteer-core once (goes to node_modules, nothing saved to package.json)…');
-  const r = spawnSync('npm', ['install', '--no-save', 'puppeteer-core'], { stdio: 'inherit', cwd: REPO, shell: true });
+  const r = spawnSync('npm', ['install', '--no-save', 'puppeteer-core'], { stdio: 'inherit', cwd: REPO, shell: process.platform === 'win32' });
   puppeteer = r.status === 0 ? requirePuppeteer() : null;
   if (!puppeteer) { console.error('could not install puppeteer-core — install it manually: npm i -D puppeteer-core'); process.exit(1); }
 }
@@ -81,7 +81,7 @@ if (!puppeteer) {
 // ---- find a Chrome/Chromium ------------------------------------------------------------------------
 function execOnPath(names) {
   for (const n of names) {
-    const q = spawnSync(process.platform === 'win32' ? 'where' : 'which', [n], { encoding: 'utf8', shell: true });
+    const q = spawnSync(process.platform === 'win32' ? 'where' : 'which', [n], { encoding: 'utf8' });
     const p = (q.stdout || '').split(/\r?\n/)[0];
     if (p && fs.existsSync(p)) return p;
   }
@@ -120,7 +120,7 @@ function findChrome() {
   return candidates.find((c) => fs.existsSync(c)) || cachedBrowser();
 }
 
-// ---- output folder (created after a browser is found, so failures leave no empty dirs) ---------------
+// ---- output folder ----------------------------------------------------------------------------------
 const outDir = path.resolve(opts.out || path.join(process.cwd(), 'cine-frames-' + (opts.seed ?? '') + '-' + Date.now()));
 
 // ---- launch ------------------------------------------------------------------------------------------
@@ -135,9 +135,7 @@ if (!exePath) {
     '  sudo apt install -y libnss3 libnspr4 libasound2');
   process.exit(1);
 }
-fs.mkdirSync(outDir, { recursive: true });
 console.log('browser: ' + exePath);
-console.log('frames -> ' + outDir);
 
 const H = opts.height ?? 720;
 const W = Math.round(H * 16 / 9 / 2) * 2;
@@ -163,9 +161,22 @@ try {
     defaultViewport: { width: W, height: H, deviceScaleFactor: 1 },
   });
 } catch (err) {
-  console.error('could not launch the browser: ' + err.message);
+  const msg = String((err && err.message) || err);
+  const missing = /shared libraries: ([\w.+-]+)/.exec(msg);
+  if (/shared libraries|Code: 127/.test(msg)) {
+    console.error('\nthe browser is missing system libraries' + (missing ? ' (' + missing[1] + ')' : '') + '. Install them once:');
+    console.error('  Debian/Ubuntu/Codespaces (the codespace user has passwordless sudo):');
+    console.error('    sudo apt-get install -y libnss3 libnspr4 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2');
+    console.error('  or the catch-all: sudo npx playwright install-deps chromium');
+    console.error('  then rerun: npm run cine:render');
+  } else {
+    console.error('could not launch the browser: ' + msg);
+  }
   process.exit(1);
 }
+
+fs.mkdirSync(outDir, { recursive: true });
+console.log('frames -> ' + outDir);
 
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.error('[page] ' + e.message));

@@ -101,7 +101,7 @@ function staticFfmpeg() {
   } catch { return null; }
 }
 function findFfmpeg() {
-  const probe = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', shell: true });
+  const probe = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (!probe.error && probe.status === 0) return 'ffmpeg';
   return staticFfmpeg();
 }
@@ -109,7 +109,7 @@ function findFfmpeg() {
 let ffmpeg = opts.dry ? 'ffmpeg' : findFfmpeg();
 if (!ffmpeg && !opts.dry) {
   console.log('no system ffmpeg — installing ffmpeg-static once (~30 MB, goes to node_modules, nothing saved to package.json)…');
-  const r = spawnSync('npm', ['install', '--no-save', 'ffmpeg-static'], { stdio: 'inherit', cwd: REPO, shell: true });
+  const r = spawnSync('npm', ['install', '--no-save', 'ffmpeg-static'], { stdio: 'inherit', cwd: REPO, shell: process.platform === 'win32' });
   ffmpeg = r.status === 0 ? staticFfmpeg() : null;
   if (!ffmpeg) {
     console.error('could not get ffmpeg. Install it manually:\n' +
@@ -140,7 +140,7 @@ const seconds = files.length / fps;
 console.log(`${files.length} frames (${ext}) @ ${fps} fps -> ${seconds.toFixed(1)} s`);
 if (opts.dry) { console.log('dry run: ' + ffmpeg + ' ' + args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')); process.exit(0); }
 console.log([path.basename(ffmpeg), ...args.slice(0, 5)].join(' ') + ' … ' + path.basename(out));
-const run = spawnSync(ffmpeg, args, { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' });
+const run = spawnSync(ffmpeg, args, { stdio: ['ignore', 'ignore', 'inherit'], shell: false });
 if (run.error || run.status !== 0) { console.error('ffmpeg failed (exit ' + (run.status ?? run.error?.code) + ')'); process.exit(1); }
 const mb = (fs.statSync(out).size / 1048576).toFixed(1);
 console.log('✓ ' + out + ' — ' + seconds.toFixed(1) + ' s, ' + mb + ' MB');
