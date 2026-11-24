@@ -16,10 +16,11 @@
 // (window.__cineSink / __cineDone) streams every rendered frame to this process, which writes it to
 // disk. The export loop itself is the deterministic fixed-dt one from docs/CINE.md.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -31,8 +32,9 @@ Usage:
   node tools/cine-render.mjs [options]
 
 Options:
-  --url URL      base URL of a running server      (default http://localhost:5273)
-                 (must serve this repo: "npm run dev" first)
+  --url URL      base URL serving this repo         (default http://localhost:5273)
+                 (a LOCAL url that is down is started for you — Vite on that port — and
+                 stopped again when the render finishes; remote URLs must already be up)
   --out DIR      output frames folder               (default ./cine-frames-<seed>-<timestamp>)
   --seed N       world seed                         (default: the server's default)
   --shot N       begin at shot N (1-based)          (default 1)
@@ -121,7 +123,40 @@ function findChrome() {
 }
 
 // ---- output folder ----------------------------------------------------------------------------------
-const outDir = path.resolve(opts.out || path.join(process.cwd(), 'cine-frames-' + (opts.seed ?? '') + '-' + Date.now()));
+const outDir = path.resolve(opts.out || path.join(process.cwd(), 'cine-frames-' + (opts.seed != null ? 'seed' + opts.seed + '-' : '') + Date.now()));
+
+// ---- server: probe the URL; start a Vite dev server automatically when it is local and down ---------
+function probe(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url, (res) => { res.resume(); resolve(res.statusCode || 0); });
+    req.on('error', () => resolve(0));
+    req.setTimeout(5000, () => { req.destroy(); resolve(0); });
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let serverChild = null;
+process.on('exit', () => { if (serverChild) serverChild.kill(); }); // any exit path stops our server
+
+async function ensureServer() {
+  if (await probe(opts.url)) return; // already running (npm run dev, vite preview, pages …)
+  const u = new URL(opts.url);
+  if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') {
+    console.error(opts.url + ' is not reachable and not local — start a server yourself, then rerun.');
+    process.exit(1);
+  }
+  console.log('no server on port ' + u.port + ' — starting the Vite dev server for you…');
+  serverChild = spawn(process.execPath, [path.join(REPO, 'node_modules', 'vite', 'bin', 'vite.js'), '--port', u.port, '--host', '127.0.0.1', '--strictPort'],
+    { cwd: REPO, stdio: 'ignore' });
+  serverChild.on('error', () => {});
+  for (let i = 0; i < 60; i++) {
+    await sleep(500);
+    if (await probe(opts.url)) { console.log('  dev server is up.'); return; }
+    if (serverChild.exitCode !== null) break;
+  }
+  console.error('could not start a dev server on port ' + u.port + ' — start one manually (npm run dev) and rerun.');
+  process.exit(1);
+}
+await ensureServer();
 
 // ---- launch ------------------------------------------------------------------------------------------
 const exePath = findChrome();

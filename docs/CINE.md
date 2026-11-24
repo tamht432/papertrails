@@ -34,8 +34,8 @@ Keys (the atlas page keeps Tab / E / Escape):
 ### From the CLI, no browser window (`tools/cine-render.mjs`)
 
 ```
-npm run dev                                            # terminal 1: serve the repo
-npm run cine:render                                    # terminal 2: headless export -> ./cine-frames-*/
+npm run cine:render                                    # headless export -> ./cine-frames-*/
+                                                       # (starts its own dev server when none is running)
 npm run cine:render -- --seed 11 --height 1080 --png   # options pass through
 node tools/cine-video.mjs cine-frames-11-*/            # then: frames -> video
 ```
