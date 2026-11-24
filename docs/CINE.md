@@ -48,7 +48,7 @@ browser is found, fetch a headless build once:
 
 ```
 npx @puppeteer/browsers install chrome-headless-shell@stable --path ~/.cache/papertrails
-node tools/cine-render.mjs --exec ~/.cache/papertrails/chrome-headless-shell/*/chrome-headless-shell
+npm run cine:render        # the cached shell is found automatically — no --exec needed
 ```
 
 ### In the browser (R)

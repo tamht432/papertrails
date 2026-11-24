@@ -87,6 +87,26 @@ function execOnPath(names) {
   }
   return null;
 }
+const CHROME_NAMES = new Set(process.platform === 'win32' ? ['chrome-headless-shell.exe', 'chrome.exe'] : ['chrome-headless-shell', 'chrome']);
+/** Newest executable named chrome / chrome-headless-shell under a cache folder
+ *  (@puppeteer/browsers layout: <root>/<product>/<platform-ver>/<arch-dir>/<binary>). */
+function newestInCache(root, depth, out) {
+  let entries = [];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const p = path.join(root, e.name);
+    if (e.isDirectory()) { if (depth > 0) newestInCache(p, depth - 1, out); }
+    else if (CHROME_NAMES.has(e.name)) { const st = fs.statSync(p); if (!out.best || st.mtimeMs > out.bestMs) { out.best = p; out.bestMs = st.mtimeMs; } }
+  }
+}
+function cachedBrowser() {
+  const out = { best: null, bestMs: 0 };
+  const home = os.homedir();
+  newestInCache(path.join(home, '.cache', 'papertrails'), 4, out);
+  if (!out.best) newestInCache(path.join(home, '.cache', 'puppeteer'), 4, out);
+  if (out.best && !CHROME_NAMES.has(path.basename(out.best))) return null; // paranoia on odd layouts
+  return out.best;
+}
 function findChrome() {
   if (opts.exec) return fs.existsSync(opts.exec) ? opts.exec : null;
   if (process.env.PAPERTRAILS_CHROME && fs.existsSync(process.env.PAPERTRAILS_CHROME)) return process.env.PAPERTRAILS_CHROME;
@@ -97,23 +117,25 @@ function findChrome() {
     : process.platform === 'win32'
       ? ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe']
       : ['/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
-  return candidates.find((c) => fs.existsSync(c)) || null;
+  return candidates.find((c) => fs.existsSync(c)) || cachedBrowser();
 }
 
-// ---- output folder ----------------------------------------------------------------------------------
+// ---- output folder (created after a browser is found, so failures leave no empty dirs) ---------------
 const outDir = path.resolve(opts.out || path.join(process.cwd(), 'cine-frames-' + (opts.seed ?? '') + '-' + Date.now()));
-fs.mkdirSync(outDir, { recursive: true });
 
 // ---- launch ------------------------------------------------------------------------------------------
 const exePath = findChrome();
 if (!exePath) {
-  console.error('no Chrome/Chromium found.\n' +
-    '  install Chrome, or fetch a headless build once and point at it:\n' +
-    '    npx @puppeteer/browsers install chrome-headless-shell@stable --path ~/.cache/papertrails\n' +
-    '    node tools/cine-render.mjs --exec ~/.cache/papertrails/chrome-headless-shell/*/chrome-headless-shell\n' +
-    '  (or set PAPERTRAILS_CHROME=/path/to/chrome)');
+  console.error('no Chrome/Chromium found. Fetch a headless build once (any OS, ~120 MB), then rerun:\n' +
+    '  npx @puppeteer/browsers install chrome-headless-shell@stable --path ~/.cache/papertrails\n' +
+    '  npm run cine:render\n' +
+    '(it is found automatically in ~/.cache/papertrails and ~/.cache/puppeteer; or point at any\n' +
+    ' installed browser with --exec /path/to/chrome or PAPERTRAILS_CHROME)\n' +
+    'On a bare Linux container the headless shell may need system libs first:\n' +
+    '  sudo apt install -y libnss3 libnspr4 libasound2');
   process.exit(1);
 }
+fs.mkdirSync(outDir, { recursive: true });
 console.log('browser: ' + exePath);
 console.log('frames -> ' + outDir);
 
