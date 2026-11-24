@@ -40,18 +40,33 @@ rendered frame is captured off the canvas:
 - **Other browsers / sandboxed iframes**: frames are zipped in memory and downloaded once as
   `papertrails-cine-seed<seed>-<n>f-<h>p.zip`. The in-memory path is capped (`CONFIG.cine.maxFrames`).
 
-Frames are JPEG by default (`q 0.94`); `?cinepng=1` switches to lossless PNG.
+Frames are JPEG by default (`q 0.94`); `?cinepng=1` switches to lossless PNG. The zip name carries
+the export rate (`…-30fps-1770f-720p.zip`), so the conversion script below needs no extra flags.
 
-### Frames → video (ffmpeg)
+### Frames → video (the script)
+
+`tools/cine-video.mjs` converts a frame set into a finished video — zero dependencies. It reads the
+fps from the zip name, extracts the zip itself, and uses the system ffmpeg, falling back to a local
+`ffmpeg-static` which it installs automatically when no system ffmpeg exists.
 
 ```
-unzip papertrails-cine-seed11-1770f-720p.zip -d frames/
+node tools/cine-video.mjs papertrails-cine-seed11-30fps-1770f-720p.zip   # zip: extracted automatically
+node tools/cine-video.mjs frames/                                        # the Chrome folder-stream export
+npm run cine:video -- frames/ --fps 60 --height 1080 --crf 14            # explicit rate / scale / quality
+node tools/cine-video.mjs frames/ --prores       # ProRes 422 intermediate for an editor
+node tools/cine-video.mjs frames/ --webm         # VP9 / WebM
+```
+
+Slow motion: capture at a higher rate (`?cinefps=60`) and convert as usual — the script reads the 60
+from the zip name, so the output plays at half speed with full temporal smoothness (or pass `--fps`
+explicitly for a folder export).
+
+Manual ffmpeg, should you prefer it:
+
+```
+unzip papertrails-cine-seed11-30fps-1770f-720p.zip -d frames/
 ffmpeg -framerate 30 -i frames/frame_%06d.jpg -c:v libx264 -crf 17 -pix_fmt yuv420p papertrails.mp4
 ```
-
-For a soft, filmic master add `-vf "format=yuv420p"` (already above) and consider `-crf 14` for
-archival, or `-c:v prores_ks -profile:v 3` for an editing intermediate. For slow motion, render with
-`?cinefps=60` and play back at 30 (`-framerate 60` in, `-r 30` out).
 
 ## URL parameters
 

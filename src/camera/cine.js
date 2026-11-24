@@ -383,7 +383,7 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
         await nextFrame(); // let the overlay paint before the long zip + download
         const blob = zip.finish();
         const mb = (blob.size / 1048576).toFixed(0);
-        saveBlob(blob, 'papertrails-cine-seed' + (state.seed | 0) + '-' + frames + 'f-' + h + 'p.zip');
+        saveBlob(blob, 'papertrails-cine-seed' + (state.seed | 0) + '-' + fps + 'fps-' + frames + 'f-' + h + 'p.zip');
         summary = frames + ' frames · ' + mb + ' MB · zip saved';
       }
     } else if (stream) { await stream.close().catch(() => {}); }
