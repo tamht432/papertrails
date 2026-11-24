@@ -31,6 +31,28 @@ Keys (the atlas page keeps Tab / E / Escape):
 
 ## Exporting frames
 
+### From the CLI, no browser window (`tools/cine-render.mjs`)
+
+```
+npm run dev                                            # terminal 1: serve the repo
+npm run cine:render                                    # terminal 2: headless export -> ./cine-frames-*/
+npm run cine:render -- --seed 11 --height 1080 --png   # options pass through
+node tools/cine-video.mjs cine-frames-11-*/            # then: frames -> video
+```
+
+The driver (puppeteer-core + your installed Chrome/Chromium, found automatically or `--exec`) loads
+`?cine=1`, presses R for you, and a small bridge in cine.js streams every rendered frame to the
+process, which writes it to disk. It renders with software WebGL (SwiftShader), so it also runs on
+GPU-less CI machines — slow, but the same deterministic fixed-dt export as in the browser. If no
+browser is found, fetch a headless build once:
+
+```
+npx @puppeteer/browsers install chrome-headless-shell@stable --path ~/.cache/papertrails
+node tools/cine-render.mjs --exec ~/.cache/papertrails/chrome-headless-shell/*/chrome-headless-shell
+```
+
+### In the browser (R)
+
 **R** stops the animation loop and re-drives it with a **fixed dt** (`CONFIG.cine.fps`), so the
 recording is deterministic and never drops or duplicates a frame, whatever the machine does. Every
 rendered frame is captured off the canvas:

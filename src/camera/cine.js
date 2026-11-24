@@ -311,6 +311,10 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) window.addEventListener(type, blockPointer, true);
     startShot(C.startShot | 0);
     if (ui.root) ui.root.classList.add('on');
+    // Console + headless driver hooks: window.__cine (the API above), __cineReady (boot done),
+    // __cineSink / __cineDone (frame bridge, only defined by the driver before it presses R).
+    window.__cine = api;
+    window.__cineReady = true;
   }
 
   function exit() {
@@ -326,6 +330,13 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
 
   // ---- export ---------------------------------------------------------------------------------------
   function nextFrame() { return new Promise((r) => requestAnimationFrame(() => r())); }
+
+  /** Uint8Array -> base64 (chunked, no call-stack blowups) for the headless __cineSink bridge. */
+  function toBase64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
 
   async function runExport(allShots) {
     if (busyExport) return;
@@ -348,8 +359,12 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     const type = C.png ? 'image/png' : 'image/jpeg';
     const ext = C.png ? 'png' : 'jpg';
     exportState = { done: 0, total, hint: 'starting…', cancel: false };
-    // Chrome: stream the frames into a picked folder (uncapped, PNG-friendly); else zip in memory
-    let stream = await openStream();
+    // Headless drive (tools/cine-render.mjs): a page-defined __cineSink(name, base64) receives every
+    // frame directly — no picker, no zip. Chrome folder streaming next; zip as the fallback.
+    const sink = typeof window !== 'undefined' && typeof window.__cineSink === 'function'
+      ? { async write(name, bytes) { await window.__cineSink(name, toBase64(bytes)); }, async close() {} }
+      : null;
+    let stream = sink || await openStream();
     if (stream && stream.cancelled) stream = null;
     const cap = stream ? Infinity : C.maxFrames;
     if (!stream && total > C.maxFrames) { total = C.maxFrames; exportState.total = total; }
@@ -387,6 +402,10 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
         summary = frames + ' frames · ' + mb + ' MB · zip saved';
       }
     } else if (stream) { await stream.close().catch(() => {}); }
+    // headless driver waits for this (tools/cine-render.mjs)
+    if (typeof window !== 'undefined' && typeof window.__cineDone === 'function') {
+      try { window.__cineDone({ frames, aborted, summary, width: w, height: h, fps }); } catch { /* driver went away */ }
+    }
     // restore live playback where the recording began (busyExport first: resize() gates on it)
     exportState = null;
     busyExport = false;

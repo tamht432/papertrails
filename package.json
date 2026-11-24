@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cine:video": "node tools/cine-video.mjs"
+    "cine:video": "node tools/cine-video.mjs",
+    "cine:render": "node tools/cine-render.mjs"
   },
   "dependencies": {
     "three": "^0.187.0"
