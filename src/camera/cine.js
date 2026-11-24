@@ -436,12 +436,14 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     startShot(first);
     return summary;
   }
-  function beginExport(allShots) {
+  function beginExport(from, to) {
     if (busyExport || !begun || !active || game.modal()) return null;
     busyExport = true;
-    const first = allShots ? 0 : shotIndex;
+    // from / to: 0-based shot indexes (null = from the current shot to the end)
+    const first = Number.isFinite(from) ? Math.max(0, Math.min(SHOTS.length - 1, from | 0)) : shotIndex;
+    const last = Number.isFinite(to) ? Math.max(first, Math.min(SHOTS.length - 1, to | 0)) : SHOTS.length - 1;
     const counts = [];
-    for (let i = first; i < SHOTS.length; i++) counts.push(Math.round(SHOTS[i].dur * C.fps));
+    for (let i = first; i <= last; i++) counts.push(Math.round(SHOTS[i].dur * C.fps));
     const wasMuted = audio.muted;
     const wasMusic = music.on;
     audio.setMuted(true);
@@ -453,7 +455,7 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     startShot(first);
     pull = { first, counts, si: 0, fi: 0, frames: 0, dt: 1 / C.fps, wasMuted, wasMusic };
     exportState = { done: 0, total: counts.reduce((a, b) => a + b, 0), hint: 'headless pull', cancel: false };
-    return { total: exportState.total, w, h, fps: C.fps, ext: C.png ? 'png' : 'jpg' };
+    return { total: exportState.total, w, h, fps: C.fps, ext: C.png ? 'png' : 'jpg', first, last };
   }
   function stepExport() {
     if (!pull) return { done: true };

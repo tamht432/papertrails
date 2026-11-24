@@ -38,6 +38,8 @@ Options:
   --out DIR      output frames folder               (default ./cine-frames-<seed>-<timestamp>)
   --seed N       world seed                         (default: the server's default)
   --shot N       begin at shot N (1-based)          (default 1)
+  --to N         stop after shot N (1-based, inclusive)  (default: the last shot)
+                 (the biome tour is shots 4-6:  --shot 4 --to 6)
   --fps N        export frame rate                  (default 30)
   --height N     frame height in px                 (default 720)
   --png          lossless PNG frames instead of JPEG
@@ -49,7 +51,7 @@ Options:
 
 // ---- args -----------------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
-const opts = { url: 'http://localhost:5273', out: null, seed: null, shot: null, fps: null, height: null, png: false, exec: null, timeout: 1800, keepOpen: false };
+const opts = { url: 'http://localhost:5273', out: null, seed: null, shot: null, to: null, fps: null, height: null, png: false, exec: null, timeout: 1800, keepOpen: false };
 const positional = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -58,6 +60,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--out') opts.out = argv[++i];
   else if (a === '--seed') opts.seed = parseInt(argv[++i], 10);
   else if (a === '--shot') opts.shot = parseInt(argv[++i], 10);
+  else if (a === '--to') opts.to = parseInt(argv[++i], 10);
   else if (a === '--fps') opts.fps = parseInt(argv[++i], 10);
   else if (a === '--height') opts.height = parseInt(argv[++i], 10);
   else if (a === '--png') opts.png = true;
@@ -243,7 +246,9 @@ await new Promise((r) => setTimeout(r, 2500)); // let the opening tiles finish r
 // The driver OWNS the loop: begin once, then pull one rendered frame per evaluate. No keyboard
 // dispatch (a software-rendered page starves input events) and no zip — frames go straight to disk.
 console.log('exporting at ' + fps + ' fps, ' + W + 'x' + H + (opts.png ? ' PNG' : ' JPEG') + ' — headless, software GL (slow but frame-exact)…');
-const info = await page.evaluate(() => window.__cine && window.__cine.beginExport ? window.__cine.beginExport(true) : null);
+const from = opts.shot != null && Number.isFinite(opts.shot) ? opts.shot - 1 : null;
+const to = opts.to != null && Number.isFinite(opts.to) ? opts.to - 1 : null;
+const info = await page.evaluate((f, t) => (window.__cine && window.__cine.beginExport ? window.__cine.beginExport(f, t) : null), from, to);
 if (!info) { console.error('could not begin the export (cine api missing or already busy).'); await browser.close(); process.exit(1); }
 const t0 = Date.now();
 let frames = 0;

@@ -37,6 +37,7 @@ Keys (the atlas page keeps Tab / E / Escape):
 npm run cine:render                                    # headless export -> ./cine-frames-*/
                                                        # (starts its own dev server when none is running)
 npm run cine:render -- --seed 11 --height 1080 --png   # options pass through
+npm run cine:render -- --shot 4 --to 6                 # only the biome tour (shots 4-6)
 node tools/cine-video.mjs cine-frames-11-*/            # then: frames -> video
 ```
 
