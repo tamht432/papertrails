@@ -8,7 +8,11 @@
 //   Shot 2  JOURNEY           he walks north along the page; a low tracking side shot
 //   Shot 3  THE DARK LANTERN  he walks to the nearest lamp tile of the world; night falls mid-shot;
 //                             when a lamp catches (bus 'game:lantern') the lens eases in for the sparks
-//   Shot 4  NIGHT WATCH       a close low orbit at night, lantern pool and fireflies
+//   Shot 4+ BIOME TOUR        one cut per entry of CONFIG.cine.tourBiomes: the traveller TELEPORTS
+//                             to the nearest subject tile of that biome and the book rebuilds the new
+//                             scenery around him while the camera holds (pop-up book logic: a cut
+//                             between spreads = the page folds itself anew)
+//   Last    NIGHT WATCH       a close low orbit at night, lantern pool and fireflies
 //
 // Keys (bubble phase; the atlas page keeps Tab / E / Escape): C next shot · X exit · R export the
 // whole sequence as frames, Shift+R the current shot only · Esc cancels an export / exits cine.
@@ -23,6 +27,7 @@
 import { CONFIG, TILE_SIZE } from '../core/config.js';
 import { state } from '../core/state.js';
 import { bus } from '../core/events.js';
+import { biomeAt } from '../core/biomes.js';
 import { captureFrame, createZipStream, openStream, saveBlob } from './cineexport.js';
 
 const ease = (t) => t * t * (3 - 2 * t);
@@ -41,6 +46,16 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
   let modalSeenT = -10;        // last time the atlas page was open (so Esc closes it without exiting cine)
   let exportState = null;      // { done, total, hint, cancel } while recording
   let flashTimer = 0;
+
+  // ---- biome-tour presets (one per entry of CONFIG.cine.tourBiomes; built into SHOTS below) --------
+  // wx / wz: where he walks through the new scenery (he lands facing it); d/p/y/fov/su: the camera
+  // arc (start -> end distance / pitch / yaw, focal length, screenUp). Tuned per biome's textures:
+  // wide and low for dune silhouettes, tighter for the cabins, low for the blossom canopy.
+  const TOUR = {
+    desert: { biome: 'desert', name: 'DESERT CROSSING', wx: 0.94, wz: -0.34, d0: 8.2, d1: 9.4, p0: 27, p1: 30, y0: -16, y1: 10, fov: 29, su: 0.4 },
+    snow: { biome: 'snow', name: 'SNOW SETTLEMENT', wx: -0.71, wz: -0.71, d0: 7.4, d1: 8.6, p0: 29, p1: 26, y0: 14, y1: -12, fov: 30, su: 0.42 },
+    blossom: { biome: 'blossom', name: 'BLOSSOM GARDEN', wx: 0.34, wz: -0.94, d0: 6.8, d1: 8.2, p0: 24, p1: 28, y0: 10, y1: 26, fov: 31, su: 0.38 },
+  };
 
   // ---- the shot list. pose(t, P) writes the follow-camera pose for shot time t (P is the live pose
   // object follow.js places the lens from, so every rig feature keeps working). --------------------
@@ -104,6 +119,30 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
         P.smoothTime = 1.2;
       },
     },
+    // ---- biome tour: a cut = teleport to a fresh scenery, the book rebuilds it around him -----------
+    ...C.tourBiomes.map((b) => TOUR[b]).filter(Boolean).map((cam) => ({
+      id: 'tour-' + cam.biome, name: cam.name, dur: C.durTour, night: 0, reach: 0.6,
+      walkDir: { x: cam.wx, z: cam.wz },
+      prepare() {
+        const p = traveller.position;
+        const tx = Math.round(p.x / TILE_SIZE); const tz = Math.round(p.z / TILE_SIZE);
+        const spot = findInBiome(tx, tz, cam.biome, C.tourRadius);
+        if (spot) {
+          const [x, z] = findWalkableNear(spot.cx * TILE_SIZE, spot.cz * TILE_SIZE);
+          traveller.teleport(x, z, cam.wx, cam.wz); // he lands facing where he is about to walk
+        }
+      },
+      pose(t, P) {
+        const k = ease(clamp01(t / this.dur));
+        P.distance = lerp(cam.d0, cam.d1, k);
+        P.pitchDeg = lerp(cam.p0, cam.p1, k);
+        P.yawDeg = lerp(cam.y0, cam.y1, k);
+        P.fov = cam.fov;
+        P.screenUp = cam.su;
+        P.lookAhead = 1.2;
+        P.smoothTime = 1.1;
+      },
+    })),
     {
       id: 'night', name: 'NIGHT WATCH', dur: C.durNight, night: 1, reach: 0,
       pose(t, P) {
@@ -132,6 +171,40 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
       }
     }
     return best;
+  }
+
+  /** Nearest cell (within `radius`) of one biome — a subject tile of the biome if one is in range,
+   *  else any cell of it. Biome checks are pure lookups; only biome-matching cells pay a tileAt. */
+  function findInBiome(tx, tz, biome, radius) {
+    let any = null; let anyD = Infinity;
+    let subj = null; let subjD = Infinity;
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const d = dx * dx + dz * dz;
+        if (d >= anyD && d >= subjD) continue;
+        if (biomeAt(state.seed, tx + dx, tz + dz) !== biome) continue;
+        if (d < anyD) { anyD = d; any = { cx: tx + dx, cz: tz + dz }; }
+        if (d < subjD) {
+          const cell = world.tileAt(tx + dx, tz + dz);
+          if (cell && C.subjectTiles.indexOf(cell.model) >= 0) { subjD = d; subj = { cx: tx + dx, cz: tz + dz }; }
+        }
+      }
+    }
+    return subj || any;
+  }
+
+  /** A standable spot at / near world (x, z) (the same spiral main.js uses at boot). */
+  function findWalkableNear(x, z) {
+    if (world.isWalkable(x, z)) return [x, z];
+    for (let r = 0.25; r <= TILE_SIZE * 3; r += 0.25) {
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const nx = x + Math.cos(a) * r;
+        const nz = z + Math.sin(a) * r;
+        if (world.isWalkable(nx, nz)) return [nx, nz];
+      }
+    }
+    return [x, z];
   }
 
   // ---- overlay (index.html #cine): one shot line, a thin progress rule, one hint line -------------

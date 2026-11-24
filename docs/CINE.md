@@ -11,14 +11,15 @@ npm run dev
 # open http://localhost:5273/?cine=1
 ```
 
-The sequence loops forever:
+The sequence loops forever (~86 s, 7 shots):
 
 | # | Shot | What happens |
 |---|------|--------------|
 | 1 | THE BOOK OPENS | Crane back from a close-up to the wide diorama while the page rises around him. Day. |
 | 2 | JOURNEY | He walks north along the page; a low tracking side shot. Day. |
 | 3 | THE DARK LANTERN | He walks to the nearest lamp/landmark tile; night falls mid-shot; when a lamp catches, the lens eases in for the sparks. |
-| 4 | NIGHT WATCH | A close low orbit at night, lantern pool and fireflies. |
+| 4–6 | BIOME TOUR | One cut per entry of `CONFIG.cine.tourBiomes` (desert → snow → blossom): the traveller *teleports* to the nearest subject tile of that biome and the book rebuilds the new scenery around him while the camera holds — the pop-up book turning its own pages. Day. |
+| 7 | NIGHT WATCH | A close low orbit at night, lantern pool and fireflies. |
 
 Keys (the atlas page keeps Tab / E / Escape):
 
@@ -66,11 +67,13 @@ archival, or `-c:v prores_ks -profile:v 3` for an editing intermediate. For slow
 
 ## Tuning
 
-- Shot lengths, the night cue and the scan radius: `src/core/config/cine.js`.
-- The shots themselves (poses, walk scripts, the lantern catch ease): `SHOTS` in `src/camera/cine.js`.
-  A shot is `{ id, name, dur, night, reach, prepare?, pose(t, P), walkDir? / path? }`; `pose(t, P)`
+- Shot lengths, the night cue, the scan radii and the biome-tour list: `src/core/config/cine.js`.
+- The shots themselves (poses, walk scripts, the lantern catch ease): `SHOTS` in `src/camera/cine.js`;
+  the biome-tour camera arcs are the `TOUR` presets there. A shot is
+  `{ id, name, dur, night, reach, prepare?, pose(t, P), walkDir? / path? }`; `pose(t, P)`
   writes the follow-camera pose for shot time t (keys mirror `CONFIG.camera`: `distance`, `pitchDeg`,
-  `yawDeg`, `fov`, `screenUp`, `lookAhead`, `smoothTime`, …).
+  `yawDeg`, `fov`, `screenUp`, `lookAhead`, `smoothTime`, …). `prepare()` runs once at the cut —
+  this is where the tour shots teleport the traveller.
 - Capture + zip: `src/camera/cineexport.js`.
 
 ## Notes

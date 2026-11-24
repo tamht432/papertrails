@@ -3,17 +3,24 @@
 export const cine = {
   /** Shot lengths, seconds. The sequence loops; C skips to the next shot. */
   durBook: 14,
-  durJourney: 16,
-  durLantern: 17,
+  durJourney: 14,
+  durLantern: 16,
+  /** Length of each biome-tour shot (desert / snow / blossom). */
+  durTour: 10,
   durNight: 12,
   /** Seconds into the lantern shot when night falls. */
   lanternNightAt: 4.5,
-  /** Cells (Chebyshev) scanned around the traveller for the shot's subject tile. */
-  scanRadius: 10,
+  /** Cells (Chebyshev) scanned around the traveller for the lantern shot's subject tile. */
+  scanRadius: 7,
+  /** Cells (Chebyshev) scanned for a biome-tour stand-in (biome field first, subject tiles preferred). */
+  tourRadius: 16,
   /** Tile models that can hold a lamp (the shot walks to them and lights one), then any subject tile. */
   lampTiles: ['lantern_post', 'market_square', 'church', 'manor', 'snow_hamlet'],
   subjectTiles: ['village', 'village_b', 'village_green', 'market_square', 'church', 'manor', 'windmill',
     'barn_farm', 'snow_cabin', 'snow_hamlet', 'desert_market', 'desert_camp', 'blossom_gazebo', 'watchtower'],
+  /** The biome tour: one shot per entry (order kept) — a cut teleports him there and the book
+   *  rebuilds the new scenery around him while the camera holds. */
+  tourBiomes: ['desert', 'snow', 'blossom'],
   // ---- exporter (R = whole sequence, Shift+R = the current shot) --------------------------------
   /** Fixed simulation/render rate of the recording, frames per second. ?cinefps=N */
   fps: 30,
