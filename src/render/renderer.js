@@ -4,9 +4,9 @@
 import * as THREE from 'three';
 import { qualitySettings } from '../core/config.js';
 
-export function createRenderer({ canvas, quality = 'high' }) {
+export function createRenderer({ canvas, quality = 'high', preserveDrawingBuffer = false }) {
   let q = qualitySettings(quality);
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance', preserveDrawingBuffer });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.toneMappingExposure = 1.0;
@@ -17,9 +17,10 @@ export function createRenderer({ canvas, quality = 'high' }) {
 
   return {
     renderer,
-    /** CSS-pixel size of the canvas; pixel ratio is clamped by the quality level. */
-    setSize(width, height) {
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxDpr));
+    /** CSS-pixel size of the canvas; pixel ratio is clamped by the quality level.
+     *  An explicit `ratio` (cine export: 1) overrides the clamp for an exact output size. */
+    setSize(width, height, ratio) {
+      renderer.setPixelRatio(ratio ?? Math.min(window.devicePixelRatio || 1, q.maxDpr));
       renderer.setSize(width, height, false);
     },
     setQuality(level) {

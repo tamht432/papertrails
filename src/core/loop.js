@@ -26,6 +26,8 @@ export function createLoop({ update, render, maxDt = 1 / 20 }) {
       raf = requestAnimationFrame(tick);
     },
     stop() { running = false; cancelAnimationFrame(raf); },
+    /** One manual fixed-dt step (the cine exporter drives the loop frame by frame). */
+    step(dt) { time += dt; frame++; update(dt); render(dt); },
     get time() { return time; },
     get frame() { return frame; },
   };

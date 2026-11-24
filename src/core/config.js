@@ -10,6 +10,7 @@ import { assets } from './config/assets.js';
 import { life } from './config/life.js';
 import { game } from './config/game.js';
 import { animals } from './config/animals.js';
+import { cine } from './config/cine.js';
 
 export const TILE_SIZE = shared.TILE_SIZE;
 export const REVEAL_RADIUS = shared.REVEAL_RADIUS;
@@ -37,6 +38,7 @@ export const CONFIG = {
   life,
   game,
   animals,
+  cine,
   QUALITY,
 };
 

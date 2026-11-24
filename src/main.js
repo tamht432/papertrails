@@ -22,6 +22,7 @@ import { createLife } from './life/life.js';
 import { createAnimals } from './life/animals.js';
 import { createGame } from './game/index.js';
 import { createViews } from './camera/views.js';
+import { createCine } from './camera/cine.js';
 // Allocation-free two-dimensional length.
 const hypot2 = (a, b) => Math.sqrt(a * a + b * b);
 
@@ -31,6 +32,17 @@ const seed = Number.isFinite(seedParam) ? seedParam : CONFIG.DEFAULT_SEED;
 const quality = QUALITY[params.get('quality')] ? params.get('quality') : CONFIG.DEFAULT_QUALITY;
 const muted = params.get('mute') === '1';
 const showHint = params.get('hint') !== '0';
+// Cine mode (?cine=1): the director shot list + frame export (docs/CINE.md).
+const cineOn = params.get('cine') === '1';
+if (cineOn) {
+  const CC = CONFIG.cine;
+  const num = (k) => { const v = parseInt(params.get(k) ?? '', 10); return Number.isFinite(v) ? v : null; };
+  CC.startShot = (num('cineshot') ?? CC.startShot + 1) - 1;
+  CC.fps = num('cinefps') ?? CC.fps;
+  CC.exportHeight = num('cineh') ?? CC.exportHeight;
+  CC.maxFrames = num('cinemax') ?? CC.maxFrames;
+  CC.png = params.get('cinepng') === '1';
+}
 
 state.seed = seed;
 state.quality = quality;
@@ -38,9 +50,14 @@ state.quality = quality;
 async function boot() {
   const canvas = document.getElementById('atlas');
   const hint = document.getElementById('hint');
+  // Assigned after the loop is created (the cine exporter re-drives it); null-safe everywhere so
+  // handlers registered below can fire while boot is still awaiting assets.
+  let cine = null;
 
   const scene = new THREE.Scene();
-  const { renderer, setSize: setRendererSize } = createRenderer({ canvas, quality });
+  // preserveDrawingBuffer: cine export reads the canvas back after the render (same task, but this
+  // makes the capture robust across browsers).
+  const { renderer, setSize: setRendererSize } = createRenderer({ canvas, quality, preserveDrawingBuffer: cineOn });
   const materials = createMaterials({ quality });
   const assets = await loadAssets({ materials, renderer, quality });
   materials.setTextures(assets.textures);
@@ -62,11 +79,13 @@ async function boot() {
   // Gameplay progress is saved independently for each world seed.
   const game = createGame({ scene, renderer, world, wfc, traveller, follow, controls, lights, post, daynight, music, audio, life, assets, materials, seed, quality });
   follow.setAssistGate(game.modal);
-  // N: day / night, M: music on / off (keys only - no on-screen UI)
+  // N: day / night, M: music on / off (keys only - no on-screen UI). While cine mode directs, N and
+  // V would fight the scripted shot (night and framing are part of the timeline), so they are gated.
   window.addEventListener('keydown', (e) => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.code === 'KeyN') daynight.toggle();
-    else if (e.code === 'KeyV' && !game.modal()) views.next();
+    const cineLive = cine && cine.active;
+    if (e.code === 'KeyN') { if (!cineLive) daynight.toggle(); }
+    else if (e.code === 'KeyV' && !game.modal() && !cineLive) views.next();
     else if (e.code === 'KeyM') music.toggle();
   });
 
@@ -85,7 +104,9 @@ async function boot() {
     state.time = loop.time;
     state.frame = loop.frame;
     const input = controls.getInput(dt) || idle;
-    traveller.update(dt, game.modal() ? idle : input); // No walking while the atlas page is open.
+    // Cine mode feeds its scripted walk (or idle) instead of the live controls.
+    const cineWalk = cine && cine.active ? cine.walkInput() : null;
+    traveller.update(dt, game.modal() ? idle : (cineWalk || input)); // No walking while the atlas page is open.
     const p = traveller.position;
     const t = state.traveller;
     t.x = p.x; t.y = p.y; t.z = p.z;
@@ -95,7 +116,8 @@ async function boot() {
     state.listener.x = p.x; state.listener.z = p.z;
     state.listener.rightX = _right.x / rl; state.listener.rightZ = _right.z / rl;
     world.update(dt, p, traveller.moveDir);
-    views.update(dt);
+    if (!(cine && cine.active)) views.update(dt);
+    if (cine) cine.frame(dt); // the director writes the follow-camera pose before follow.update places the lens
     follow.update(dt, traveller);
     daynight.update(dt);
     if (life) life.update(dt, p, follow.camera);
@@ -113,8 +135,16 @@ async function boot() {
 
   const loop = createLoop({ update, render });
 
+  // Cine mode (?cine=1): the director + frame exporter. Needs the loop (it re-drives it with a fixed
+  // dt while exporting) and the resize hook to restore the canvas size afterwards.
+  cine = cineOn ? createCine({ canvas, follow, controls, traveller, world, daynight, game, audio, music, loop, hooks: {
+    exportSize(w, h) { setRendererSize(w, h, 1); post.setSize(w, h); follow.setAspect(w / h); },
+    restore() { resize(); },
+  } }) : null;
+
   // ---- resize -----------------------------------------------------------------------------------
   function resize() {
+    if (cine && cine.busy) return; // the exporter owns the canvas size until it is done
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
     setRendererSize(w, h);
@@ -124,8 +154,9 @@ async function boot() {
   }
   window.addEventListener('resize', resize);
 
-  // ---- hint (the only on-screen text) -----------------------------------------------------------
-  if (showHint) {
+  // ---- hint (the only on-screen text; cine mode has its own overlay) -----------------------------
+  if (cineOn) hint.remove();
+  else if (showHint) {
     hint.classList.add('on');
     bus.once('input:first', () => hint.classList.remove('on'));
   } else hint.remove();
@@ -151,6 +182,7 @@ async function boot() {
   const [x, z] = initialPosition();
   traveller.teleport(x, z);
   controls.clearTarget();
+  if (cine) cine.begin(); // the director takes the lens before the first frame
   update(0);
   follow.snap(traveller);
   _right.setFromMatrixColumn(follow.camera.matrixWorld, 0);
