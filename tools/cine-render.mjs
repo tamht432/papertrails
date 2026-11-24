@@ -165,9 +165,12 @@ try {
   const missing = /shared libraries: ([\w.+-]+)/.exec(msg);
   if (/shared libraries|Code: 127/.test(msg)) {
     console.error('\nthe browser is missing system libraries' + (missing ? ' (' + missing[1] + ')' : '') + '. Install them once:');
-    console.error('  Debian/Ubuntu/Codespaces (the codespace user has passwordless sudo):');
+    console.error('  Debian/Ubuntu/Codespaces (sudo apt-get update FIRST — fresh containers have empty package lists):');
+    console.error('    sudo apt-get update');
     console.error('    sudo apt-get install -y libnss3 libnspr4 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2');
-    console.error('  or the catch-all: sudo npx playwright install-deps chromium');
+    console.error('  Ubuntu 24.04 renames four of them with a t64 suffix — if the names above are "not located":');
+    console.error('    sudo apt-get install -y libnss3 libnspr4 libasound2t64 libatk1.0t64-0 libatk-bridge2.0t64-0 libcups2t64 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2');
+    console.error('  or the distro-agnostic catch-all: sudo npx playwright install-deps chromium');
     console.error('  then rerun: npm run cine:render');
   } else {
     console.error('could not launch the browser: ' + msg);
