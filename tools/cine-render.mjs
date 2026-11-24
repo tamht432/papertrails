@@ -216,8 +216,13 @@ fs.mkdirSync(outDir, { recursive: true });
 console.log('frames -> ' + outDir);
 
 const page = await browser.newPage();
-page.on('pageerror', (e) => console.error('[page] ' + e.message));
-page.on('console', (m) => { if (m.type() === 'error') console.error('[page] ' + m.text()); });
+let bootFailed = false;
+page.on('pageerror', (e) => { console.error('[page] ' + e.message); if (/boot failed/.test(e.message)) bootFailed = true; });
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  console.error('[page] ' + m.text());
+  if (/boot failed/.test(m.text())) bootFailed = true;
+});
 
 // the frame bridge: cine.js calls __cineSink(name, base64) per frame and __cineDone(info) at the end
 let frames = 0;
@@ -234,9 +239,13 @@ await page.exposeFunction('__cineDone', (info) => { doneResolve(info); return tr
 
 console.log('loading ' + url);
 await page.goto(url, { waitUntil: 'load', timeout: opts.timeout * 1000 });
-try {
-  await page.waitForFunction('window.__cineReady === true', { timeout: opts.timeout * 1000, polling: 250 });
-} catch {
+let ready = false;
+for (const end = Date.now() + opts.timeout * 1000; Date.now() < end;) {
+  if (bootFailed) { console.error('the page failed to boot (see the [page] error above) — export aborted.'); await browser.close(); process.exit(1); }
+  if (await page.evaluate(() => window.__cineReady === true)) { ready = true; break; }
+  await sleep(250);
+}
+if (!ready) {
   console.error('the cine overlay never became ready — is the URL serving this repo with ?cine=1?');
   await browser.close();
   process.exit(1);
@@ -256,5 +265,4 @@ else console.log(info.summary + (info.aborted ? ' (aborted)' : ''));
 if (!opts.keepOpen) await browser.close();
 const n = fs.readdirSync(outDir).filter((f) => /^frame_\d+\.(jpg|jpeg|png)$/i.test(f)).length;
 console.log('✓ ' + n + ' frames in ' + outDir);
-console.log('next: node tools/cine-video.mjs ' + (opts.png ? '--webm '.repeat(0) : '') + JSON.stringify(outDir) +
-  (opts.png ? ' (PNG: consider --prores or --webm)' : ''));
+console.log('next: node tools/cine-video.mjs ' + JSON.stringify(outDir) + (opts.png ? '  (PNG: consider --prores or --webm)' : ''));

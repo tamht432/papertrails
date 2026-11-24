@@ -429,7 +429,7 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
   }
   window.addEventListener('keydown', onKeyDown);
 
-  return {
+  const api = {
     get active() { return active; },
     /** True while a frame export is running (main skips resize, loop is driven by the exporter). */
     get busy() { return busyExport; },
@@ -440,4 +440,5 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     exit,
     dispose() { offLantern(); window.removeEventListener('keydown', onKeyDown); },
   };
+  return api;
 }
