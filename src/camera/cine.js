@@ -417,6 +417,61 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     flash(summary);
   }
 
+  // ---- pull API for the headless driver (tools/cine-render.mjs): the driver owns the loop and
+  // pulls one frame per call, so no CDP input dispatch is needed (a software-rendered page starves
+  // keyboard events) and the capture is the synchronous toDataURL, which is reliable everywhere. --
+  function captureSync(type, quality) {
+    try { const url = canvas.toDataURL(type, quality); return url.slice(url.indexOf(',') + 1); } catch { return null; }
+  }
+  let pull = null; // { first, counts, si, fi, frames, dt, wasMuted, wasMusic } while a driver run is active
+  function endPull(summary) {
+    const first = pull.first;
+    audio.setMuted(pull.wasMuted);
+    if (pull.wasMusic !== music.on) music.toggle();
+    pull = null;
+    exportState = null;
+    busyExport = false;
+    hooks.restore();
+    loop.start();
+    startShot(first);
+    return summary;
+  }
+  function beginExport(allShots) {
+    if (busyExport || !begun || !active || game.modal()) return null;
+    busyExport = true;
+    const first = allShots ? 0 : shotIndex;
+    const counts = [];
+    for (let i = first; i < SHOTS.length; i++) counts.push(Math.round(SHOTS[i].dur * C.fps));
+    const wasMuted = audio.muted;
+    const wasMusic = music.on;
+    audio.setMuted(true);
+    if (wasMusic) music.toggle();
+    loop.stop();
+    const h = C.exportHeight;
+    const w = Math.max(2, Math.round(h * camera.aspect / 2) * 2);
+    hooks.exportSize(w, h);
+    startShot(first);
+    pull = { first, counts, si: 0, fi: 0, frames: 0, dt: 1 / C.fps, wasMuted, wasMusic };
+    exportState = { done: 0, total: counts.reduce((a, b) => a + b, 0), hint: 'headless pull', cancel: false };
+    return { total: exportState.total, w, h, fps: C.fps, ext: C.png ? 'png' : 'jpg' };
+  }
+  function stepExport() {
+    if (!pull) return { done: true };
+    if (pull.fi >= pull.counts[pull.si]) {
+      pull.si++; pull.fi = 0;
+      if (pull.si >= pull.counts.length) { const s = pull.frames + ' frames'; endPull(s); return { done: true, summary: s }; }
+      startShot(pull.first + pull.si);
+    }
+    loop.step(pull.dt); // one fixed-dt tick + render; cine.frame inside drives pose / walk
+    const type = C.png ? 'image/png' : 'image/jpeg';
+    const b64 = captureSync(type, C.jpegQuality);
+    if (b64 === null) { const s = 'capture failed'; endPull(s); return { done: true, summary: s }; }
+    pull.frames++; pull.fi++;
+    exportState.done = pull.frames;
+    return { done: false, index: pull.frames, name: 'frame_' + String(pull.frames).padStart(6, '0') + '.' + (C.png ? 'png' : 'jpg'), b64 };
+  }
+  function endExport() { return pull ? endPull(pull.frames + ' frames (ended early)') : null; }
+
   // ---- keys (bubble phase: the atlas page's capture handler keeps Tab / E / Escape) ------------------
   function onKeyDown(e) {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -438,6 +493,10 @@ export function createCine({ canvas, follow, controls, traveller, world, daynigh
     /** The scripted walk input for the traveller (main passes it instead of controls.getInput). */
     walkInput() { return walk; },
     exit,
+    /** Headless driver API: the caller owns the loop — begin once, then stepExport() per frame. */
+    beginExport,
+    stepExport,
+    endExport,
     dispose() { offLantern(); window.removeEventListener('keydown', onKeyDown); },
   };
   return api;

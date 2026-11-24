@@ -188,6 +188,7 @@ try {
   browser = await puppeteer.launch({
     executablePath: exePath,
     headless: true,
+    protocolTimeout: 600000, // one software-rendered frame can take a while
     args: [
       '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
       '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', // software WebGL: no GPU needed
@@ -224,19 +225,6 @@ page.on('console', (m) => {
   if (/boot failed/.test(m.text())) bootFailed = true;
 });
 
-// the frame bridge: cine.js calls __cineSink(name, base64) per frame and __cineDone(info) at the end
-let frames = 0;
-let doneResolve;
-const donePromise = new Promise((r) => { doneResolve = r; });
-const t0 = Date.now();
-await page.exposeFunction('__cineSink', (name, b64) => {
-  fs.writeFileSync(path.join(outDir, name), Buffer.from(b64, 'base64'));
-  frames++;
-  if (frames % 150 === 0) console.log('  ' + frames + ' frames… ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s');
-  return true;
-});
-await page.exposeFunction('__cineDone', (info) => { doneResolve(info); return true; });
-
 console.log('loading ' + url);
 await page.goto(url, { waitUntil: 'load', timeout: opts.timeout * 1000 });
 let ready = false;
@@ -252,17 +240,24 @@ if (!ready) {
 }
 await new Promise((r) => setTimeout(r, 2500)); // let the opening tiles finish rising so shot 1 has a page
 
+// The driver OWNS the loop: begin once, then pull one rendered frame per evaluate. No keyboard
+// dispatch (a software-rendered page starves input events) and no zip — frames go straight to disk.
 console.log('exporting at ' + fps + ' fps, ' + W + 'x' + H + (opts.png ? ' PNG' : ' JPEG') + ' — headless, software GL (slow but frame-exact)…');
-await page.keyboard.press('KeyR'); // the same export the R key starts; the sink catches the frames
-
-const info = await Promise.race([
-  donePromise,
-  new Promise((r) => setTimeout(() => r(null), opts.timeout * 1000)),
-]);
-if (!info) console.error('export timed out after ' + opts.timeout + ' s — frames written so far are kept in ' + outDir);
-else console.log(info.summary + (info.aborted ? ' (aborted)' : ''));
-
+const info = await page.evaluate(() => window.__cine && window.__cine.beginExport ? window.__cine.beginExport(true) : null);
+if (!info) { console.error('could not begin the export (cine api missing or already busy).'); await browser.close(); process.exit(1); }
+const t0 = Date.now();
+let frames = 0;
+let summary = null;
+for (;;) {
+  const r = await page.evaluate(() => window.__cine.stepExport());
+  if (r.done) { summary = r.summary || 'done'; break; }
+  fs.writeFileSync(path.join(outDir, r.name), Buffer.from(r.b64, 'base64'));
+  frames++;
+  if (frames % 150 === 0) {
+    const pct = ((frames / info.total) * 100).toFixed(0);
+    console.log('  ' + frames + ' / ' + info.total + ' (' + pct + ' %)… ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s');
+  }
+}
 if (!opts.keepOpen) await browser.close();
-const n = fs.readdirSync(outDir).filter((f) => /^frame_\d+\.(jpg|jpeg|png)$/i.test(f)).length;
-console.log('✓ ' + n + ' frames in ' + outDir);
+console.log('✓ ' + frames + ' frames in ' + outDir + ' — ' + summary + ', ' + ((Date.now() - t0) / 1000).toFixed(0) + ' s');
 console.log('next: node tools/cine-video.mjs ' + JSON.stringify(outDir) + (opts.png ? '  (PNG: consider --prores or --webm)' : ''));
